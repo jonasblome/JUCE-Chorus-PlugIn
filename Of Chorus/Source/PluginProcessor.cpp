@@ -22,10 +22,38 @@ OfChorusAudioProcessor::OfChorusAudioProcessor()
                        )
 #endif
 {
+    addParameter(mDryWetParameter = new juce::AudioParameterFloat("drywet", "Dry/Wet", 0.0, 1.0, 0.5));
+    addParameter(mDepthParameter = new juce::AudioParameterFloat("depth", "Depth", 0.0, 1.0, 0.5));
+    addParameter(mRateParameter = new juce::AudioParameterFloat("rate", "Rate", 0.1f, 20.0f, 10.0f));
+    addParameter(mPhaseOffsetParameter = new juce::AudioParameterFloat("phaseoffset", "Phase Offset", 0.0f, 1.0f, 0.0f));
+    addParameter(mFeedbackParameter = new juce::AudioParameterFloat("feedback", "Feedback", 0.0, 0.98, 0.5));
+    addParameter(mTypeParameter = new juce::AudioParameterInt ("type", "Type", 0, 1, 0));
+    
+    mDelayTimeSmoothed = 0;
+    
+    mCircularBufferLeft = nullptr;
+    mCircularBufferRight = nullptr;
+    
+    mCircularBufferWriteHead = 0;
+    mCircularBufferLength = 0;
+    
+    mDelayTimeInSamples = 0;
+    mDelayReadHead = 0;
+    
+    mFeedbackLeft = 0;
+    mFeedbackRight = 0;
 }
 
 OfChorusAudioProcessor::~OfChorusAudioProcessor()
 {
+    if(mCircularBufferLeft != nullptr) {
+        delete [] mCircularBufferLeft;
+        mCircularBufferLeft = nullptr;
+    }
+    if(mCircularBufferRight != nullptr) {
+        delete [] mCircularBufferRight;
+        mCircularBufferRight = nullptr;
+    }
 }
 
 //==============================================================================
@@ -93,8 +121,23 @@ void OfChorusAudioProcessor::changeProgramName (int index, const juce::String& n
 //==============================================================================
 void OfChorusAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
+    mDelayTimeSmoothed = 1;
+    
+    mCircularBufferLength = sampleRate * MAX_DELAY_TIME;
+    
+    if(mCircularBufferLeft == nullptr) {
+        mCircularBufferLeft = new float[mCircularBufferLength];
+    }
+    
+    juce::zeromem(mCircularBufferLeft, mCircularBufferLength * sizeof(float));
+    
+    if(mCircularBufferRight == nullptr) {
+        mCircularBufferRight = new float[mCircularBufferLength];
+    }
+    
+    juce::zeromem(mCircularBufferRight, mCircularBufferLength * sizeof(float));
+
+    mCircularBufferWriteHead = 0;
 }
 
 void OfChorusAudioProcessor::releaseResources()
@@ -141,20 +184,49 @@ void OfChorusAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     // This is here to avoid people getting screaming feedback
     // when they first compile a plugin, but obviously you don't need to keep
     // this code if your algorithm always overwrites all the output channels.
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
+    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i) {
+        buffer.clear(i, 0, buffer.getNumSamples());
+    }
 
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // Make sure to reset the state if your inner loop is processing
-    // the samples and the outer loop is handling the channels.
-    // Alternatively, you can process the samples with the channels
-    // interleaved by keeping the same state.
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
-    {
-        auto* channelData = buffer.getWritePointer (channel);
+    float* leftChannel = buffer.getWritePointer(0);
+    float* rightChannel = buffer.getWritePointer(1);
+    
+    for(int i = 0; i < buffer.getNumSamples(); i++) {
+        mDelayTimeSmoothed = mDelayTimeSmoothed - 0.0003  * (mDelayTimeSmoothed - mDelayTimeSmoothed);
+        mDelayTimeInSamples = getSampleRate() * mDelayTimeSmoothed;
+        
+        mCircularBufferLeft[mCircularBufferWriteHead] = leftChannel[i] + mFeedbackLeft;
+        mCircularBufferRight[mCircularBufferWriteHead] = rightChannel[i] + mFeedbackRight;
+        
+        mDelayReadHead = mCircularBufferWriteHead - mDelayTimeInSamples;
+        
+        if(mDelayReadHead < 0) {
+            mDelayReadHead += mCircularBufferLength;
+        }
+        
+        int readHead_x = (int) mDelayReadHead;
+        int readHead_x1 = readHead_x + 1;
+        
+        float readHeadFloat = mDelayReadHead - readHead_x;
+        
+        if(readHead_x1 >= mCircularBufferLength) {
+            readHead_x1 -= mCircularBufferLength;
+        }
+        
+        float delay_sample_left = lin_interp(mCircularBufferLeft[readHead_x], mCircularBufferLeft[readHead_x1], readHeadFloat);
+        float delay_sample_right = lin_interp(mCircularBufferRight[readHead_x], mCircularBufferRight[readHead_x1], readHeadFloat);
+        
+        mFeedbackLeft = delay_sample_left * *mFeedbackParameter;
+        mFeedbackRight = delay_sample_right * *mFeedbackParameter;
+        
+        mCircularBufferWriteHead++;
+        
+        buffer.setSample(0, i, buffer.getSample(0, i) * (1 - *mDryWetParameter) + delay_sample_left * *mDryWetParameter);
+        buffer.setSample(1, i, buffer.getSample(1, i) * (1 - *mDryWetParameter) + delay_sample_right * *mDryWetParameter);
 
-        // ..do something to the data...
+        if(mCircularBufferWriteHead >= mCircularBufferLength) {
+            mCircularBufferWriteHead = 0;
+        }
     }
 }
 
@@ -188,4 +260,9 @@ void OfChorusAudioProcessor::setStateInformation (const void* data, int sizeInBy
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new OfChorusAudioProcessor();
+}
+
+float OfChorusAudioProcessor::lin_interp(float sample_x, float sample_x1, float inPhase)
+{
+    return (1 - inPhase) * sample_x + inPhase * sample_x1;
 }
