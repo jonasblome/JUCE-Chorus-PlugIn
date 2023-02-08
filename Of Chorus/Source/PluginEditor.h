@@ -30,7 +30,12 @@ private:
     OfChorusAudioProcessor& audioProcessor;
     
     juce::Slider mDryWetSlider;
+    juce::Slider mDepthSlider;
+    juce::Slider mRateSlider;
+    juce::Slider mPhaseOffsetSlider;
     juce::Slider mFeedbackSlider;
+    
+    juce::ComboBox mType;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OfChorusAudioProcessorEditor)
 };

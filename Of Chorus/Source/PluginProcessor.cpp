@@ -31,6 +31,8 @@ OfChorusAudioProcessor::OfChorusAudioProcessor()
     
     mDelayTimeSmoothed = 0;
     
+    mLFOPhase = 0;
+    
     mCircularBufferLeft = nullptr;
     mCircularBufferRight = nullptr;
     
@@ -123,6 +125,8 @@ void OfChorusAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
 {
     mDelayTimeSmoothed = 1;
     
+    mLFOPhase = 0;
+    
     mCircularBufferLength = sampleRate * MAX_DELAY_TIME;
     
     if(mCircularBufferLeft == nullptr) {
@@ -177,6 +181,13 @@ void OfChorusAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     juce::ScopedNoDenormals noDenormals;
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
+    
+    DBG("DRY WET: " << *mDryWetParameter);
+    DBG("DEPTH: " << *mDepthParameter);
+    DBG("RATE: " << *mRateParameter);
+    DBG("PHASE OFFSET: " << *mPhaseOffsetParameter);
+    DBG("FEEDBACK: " << *mFeedbackParameter);
+    DBG("TYPE: " << (int)*mTypeParameter);
 
     // In case we have more outputs than inputs, this code clears any output
     // channels that didn't contain input data, (because these aren't
@@ -192,7 +203,19 @@ void OfChorusAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     float* rightChannel = buffer.getWritePointer(1);
     
     for(int i = 0; i < buffer.getNumSamples(); i++) {
-        mDelayTimeSmoothed = mDelayTimeSmoothed - 0.0003  * (mDelayTimeSmoothed - mDelayTimeSmoothed);
+        float lfoOut = sin(2 * M_PI * mLFOPhase);
+        
+        mLFOPhase += *mRateParameter / getSampleRate();
+        
+        if(mLFOPhase > 1) {
+            mLFOPhase -= 1;
+        }
+        
+        lfoOut *= *mDepthParameter;
+        
+        float lfoOutMapped = juce::jmap<float>(lfoOut, -1.f, 1.f, 0.005f, 0.03f);
+        
+        mDelayTimeSmoothed = mDelayTimeSmoothed - 0.0003  * (mDelayTimeSmoothed - lfoOutMapped);
         mDelayTimeInSamples = getSampleRate() * mDelayTimeSmoothed;
         
         mCircularBufferLeft[mCircularBufferWriteHead] = leftChannel[i] + mFeedbackLeft;

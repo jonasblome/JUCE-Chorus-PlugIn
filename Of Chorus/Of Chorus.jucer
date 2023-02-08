@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="ZXbNki" name="Of Chorus" projectType="audioplug" useAppConfig="0"
-              addUsingNamespaceToJuceHeader="0" displaySplashScreen="1" jucerFormatVersion="1">
+              addUsingNamespaceToJuceHeader="0" displaySplashScreen="1" jucerFormatVersion="1"
+              companyName="Blome">
   <MAINGROUP id="uuV8Ii" name="Of Chorus">
     <GROUP id="{700E8EBA-A913-6EAA-7E18-109C5D026F47}" name="Source">
       <FILE id="L8d5OZ" name="PluginProcessor.cpp" compile="1" resource="0"
