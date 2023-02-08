@@ -12,27 +12,32 @@
 		<key>Of Chorus - All.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>1</integer>
+			<integer>2</integer>
 		</dict>
 		<key>Of Chorus - Shared Code.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>4</integer>
+			<integer>3</integer>
 		</dict>
 		<key>Of Chorus - Standalone Plugin.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>2</integer>
+			<integer>4</integer>
 		</dict>
 		<key>Of Chorus - VST3.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>3</integer>
+			<integer>1</integer>
 		</dict>
 	</dict>
 	<key>SuppressBuildableAutocreation</key>
 	<dict>
 		<key>43C85FB5F4577E2C1DE37AD7</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>9036554659E7780581AAC006</key>
 		<dict>
 			<key>primary</key>
 			<true/>
