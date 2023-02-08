@@ -199,8 +199,6 @@ void OfChorusAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         // Calculating delay for left channel with LFO
         float lfoOutLeft = sin(2 * M_PI * mLFOPhase);
         lfoOutLeft *= *mDepthParameter;
-        float lfoOutMappedLeft = juce::jmap<float>(lfoOutLeft, -1.f, 1.f, 0.005f, 0.03f);
-        float delayTimeSamplesLeft = getSampleRate() * lfoOutMappedLeft;
         
         // Calculating delay for right channel with LFO + offset
         float lfoPhaseRight = mLFOPhase + *mPhaseOffsetParameter;
@@ -211,7 +209,22 @@ void OfChorusAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         
         float lfoOutRight = sin(2 * M_PI * lfoPhaseRight);
         lfoOutRight *= *mDepthParameter;
-        float lfoOutMappedRight = juce::jmap<float>(lfoOutRight, -1.f, 1.f, 0.005f, 0.03f);
+        
+        float lfoOutMappedLeft = 0;
+        float lfoOutMappedRight = 0;
+        
+        // Chorus effect
+        if (*mTypeParameter == 0) {
+            lfoOutMappedLeft = juce::jmap<float>(lfoOutLeft, -1.f, 1.f, 0.005f, 0.03f);
+            lfoOutMappedRight = juce::jmap<float>(lfoOutRight, -1.f, 1.f, 0.005f, 0.03f);
+        }
+        // Flanger effect
+        else {
+            lfoOutMappedLeft = juce::jmap<float>(lfoOutLeft, -1.f, 1.f, 0.001f, 0.005f);
+            lfoOutMappedRight = juce::jmap<float>(lfoOutRight, -1.f, 1.f, 0.001f, 0.005f);
+        }
+        
+        float delayTimeSamplesLeft = getSampleRate() * lfoOutMappedLeft;
         float delayTimeSamplesRight = getSampleRate() * lfoOutMappedRight;
         
         // Updating LFO phase
