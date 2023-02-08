@@ -64,20 +64,16 @@ public:
 private:
     float mLFOPhase;
     
-    float mDelayTimeSmoothed;
-    
     juce::AudioParameterFloat* mDryWetParameter;
     juce::AudioParameterFloat* mDepthParameter;
     juce::AudioParameterFloat* mRateParameter;
     juce::AudioParameterFloat* mPhaseOffsetParameter;
     juce::AudioParameterFloat* mFeedbackParameter;
+    
     juce::AudioParameterInt* mTypeParameter;
     
     float mFeedbackLeft;
     float mFeedbackRight;
-    
-    float mDelayTimeInSamples;
-    float mDelayReadHead;
     
     int mCircularBufferWriteHead;
     int mCircularBufferLength;

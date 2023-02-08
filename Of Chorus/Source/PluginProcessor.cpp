@@ -29,8 +29,6 @@ OfChorusAudioProcessor::OfChorusAudioProcessor()
     addParameter(mFeedbackParameter = new juce::AudioParameterFloat("feedback", "Feedback", 0.0, 0.98, 0.5));
     addParameter(mTypeParameter = new juce::AudioParameterInt ("type", "Type", 0, 1, 0));
     
-    mDelayTimeSmoothed = 0;
-    
     mLFOPhase = 0;
     
     mCircularBufferLeft = nullptr;
@@ -38,9 +36,6 @@ OfChorusAudioProcessor::OfChorusAudioProcessor()
     
     mCircularBufferWriteHead = 0;
     mCircularBufferLength = 0;
-    
-    mDelayTimeInSamples = 0;
-    mDelayReadHead = 0;
     
     mFeedbackLeft = 0;
     mFeedbackRight = 0;
@@ -123,8 +118,6 @@ void OfChorusAudioProcessor::changeProgramName (int index, const juce::String& n
 //==============================================================================
 void OfChorusAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    mDelayTimeSmoothed = 1;
-    
     mLFOPhase = 0;
     
     mCircularBufferLength = sampleRate * MAX_DELAY_TIME;
@@ -203,49 +196,79 @@ void OfChorusAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     float* rightChannel = buffer.getWritePointer(1);
     
     for(int i = 0; i < buffer.getNumSamples(); i++) {
-        float lfoOut = sin(2 * M_PI * mLFOPhase);
+        // Calculating delay for left channel with LFO
+        float lfoOutLeft = sin(2 * M_PI * mLFOPhase);
+        lfoOutLeft *= *mDepthParameter;
+        float lfoOutMappedLeft = juce::jmap<float>(lfoOutLeft, -1.f, 1.f, 0.005f, 0.03f);
+        float delayTimeSamplesLeft = getSampleRate() * lfoOutMappedLeft;
         
+        // Calculating delay for right channel with LFO + offset
+        float lfoPhaseRight = mLFOPhase + *mPhaseOffsetParameter;
+        
+        if(lfoPhaseRight > 1) {
+            lfoPhaseRight -= 1;
+        }
+        
+        float lfoOutRight = sin(2 * M_PI * lfoPhaseRight);
+        lfoOutRight *= *mDepthParameter;
+        float lfoOutMappedRight = juce::jmap<float>(lfoOutRight, -1.f, 1.f, 0.005f, 0.03f);
+        float delayTimeSamplesRight = getSampleRate() * lfoOutMappedRight;
+        
+        // Updating LFO phase
         mLFOPhase += *mRateParameter / getSampleRate();
         
         if(mLFOPhase > 1) {
             mLFOPhase -= 1;
         }
         
-        lfoOut *= *mDepthParameter;
-        
-        float lfoOutMapped = juce::jmap<float>(lfoOut, -1.f, 1.f, 0.005f, 0.03f);
-        
-        mDelayTimeSmoothed = mDelayTimeSmoothed - 0.0003  * (mDelayTimeSmoothed - lfoOutMapped);
-        mDelayTimeInSamples = getSampleRate() * mDelayTimeSmoothed;
-        
+        // Writing to buffer and adding feedback
         mCircularBufferLeft[mCircularBufferWriteHead] = leftChannel[i] + mFeedbackLeft;
         mCircularBufferRight[mCircularBufferWriteHead] = rightChannel[i] + mFeedbackRight;
         
-        mDelayReadHead = mCircularBufferWriteHead - mDelayTimeInSamples;
+        // Calculating read head for left channel delay sample
+        float delayReadHeadLeft = mCircularBufferWriteHead - delayTimeSamplesLeft;
         
-        if(mDelayReadHead < 0) {
-            mDelayReadHead += mCircularBufferLength;
+        if(delayReadHeadLeft < 0) {
+            delayReadHeadLeft += mCircularBufferLength;
         }
         
-        int readHead_x = (int) mDelayReadHead;
-        int readHead_x1 = readHead_x + 1;
+        int readHeadLeft_x = (int) delayReadHeadLeft;
+        int readHeadLeft_x1 = readHeadLeft_x + 1;
+        float readHeadFloatLeft = delayReadHeadLeft - readHeadLeft_x;
         
-        float readHeadFloat = mDelayReadHead - readHead_x;
-        
-        if(readHead_x1 >= mCircularBufferLength) {
-            readHead_x1 -= mCircularBufferLength;
+        if(readHeadLeft_x1 >= mCircularBufferLength) {
+            readHeadLeft_x1 -= mCircularBufferLength;
         }
         
-        float delay_sample_left = lin_interp(mCircularBufferLeft[readHead_x], mCircularBufferLeft[readHead_x1], readHeadFloat);
-        float delay_sample_right = lin_interp(mCircularBufferRight[readHead_x], mCircularBufferRight[readHead_x1], readHeadFloat);
+        // Calculating read head for right channel delay sample
+        float delayReadHeadRight = mCircularBufferWriteHead - delayTimeSamplesRight;
         
+        if(delayReadHeadRight < 0) {
+            delayReadHeadRight += mCircularBufferLength;
+        }
+        
+        int readHeadRight_x = (int) delayReadHeadRight;
+        int readHeadRight_x1 = readHeadRight_x + 1;
+        float readHeadFloatRight = delayReadHeadRight - readHeadRight_x;
+        
+        if(readHeadRight_x1 >= mCircularBufferLength) {
+            readHeadRight_x1 -= mCircularBufferLength;
+        }
+        
+        // Interpolating delay samples from current read head positions for both channels
+        float delay_sample_left = lin_interp(mCircularBufferLeft[readHeadLeft_x], mCircularBufferLeft[readHeadLeft_x1], readHeadFloatLeft);
+        float delay_sample_right = lin_interp(mCircularBufferRight[readHeadRight_x], mCircularBufferRight[readHeadRight_x1], readHeadFloatRight);
+        
+        // Calculating feedback samples
         mFeedbackLeft = delay_sample_left * *mFeedbackParameter;
         mFeedbackRight = delay_sample_right * *mFeedbackParameter;
         
-        mCircularBufferWriteHead++;
-        
+        // Mixing sample between dry and wet signal
         buffer.setSample(0, i, buffer.getSample(0, i) * (1 - *mDryWetParameter) + delay_sample_left * *mDryWetParameter);
         buffer.setSample(1, i, buffer.getSample(1, i) * (1 - *mDryWetParameter) + delay_sample_right * *mDryWetParameter);
+        
+        // Updating buffer write head
+        mCircularBufferWriteHead++;
 
         if(mCircularBufferWriteHead >= mCircularBufferLength) {
             mCircularBufferWriteHead = 0;
