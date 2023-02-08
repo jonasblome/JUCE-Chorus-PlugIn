@@ -174,13 +174,6 @@ void OfChorusAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     juce::ScopedNoDenormals noDenormals;
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
-    
-    DBG("DRY WET: " << *mDryWetParameter);
-    DBG("DEPTH: " << *mDepthParameter);
-    DBG("RATE: " << *mRateParameter);
-    DBG("PHASE OFFSET: " << *mPhaseOffsetParameter);
-    DBG("FEEDBACK: " << *mFeedbackParameter);
-    DBG("TYPE: " << (int)*mTypeParameter);
 
     // In case we have more outputs than inputs, this code clears any output
     // channels that didn't contain input data, (because these aren't
@@ -196,6 +189,10 @@ void OfChorusAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     float* rightChannel = buffer.getWritePointer(1);
     
     for(int i = 0; i < buffer.getNumSamples(); i++) {
+        // Writing to buffer and adding feedback
+        mCircularBufferLeft[mCircularBufferWriteHead] = leftChannel[i] + mFeedbackLeft;
+        mCircularBufferRight[mCircularBufferWriteHead] = rightChannel[i] + mFeedbackRight;
+        
         // Calculating delay for left channel with LFO
         float lfoOutLeft = sin(2 * M_PI * mLFOPhase);
         lfoOutLeft *= *mDepthParameter;
@@ -213,6 +210,9 @@ void OfChorusAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         float lfoOutMappedLeft = 0;
         float lfoOutMappedRight = 0;
         
+        // Updating LFO phase
+        mLFOPhase += *mRateParameter / getSampleRate();
+        
         // Chorus effect
         if (*mTypeParameter == 0) {
             lfoOutMappedLeft = juce::jmap<float>(lfoOutLeft, -1.f, 1.f, 0.005f, 0.03f);
@@ -227,16 +227,9 @@ void OfChorusAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         float delayTimeSamplesLeft = getSampleRate() * lfoOutMappedLeft;
         float delayTimeSamplesRight = getSampleRate() * lfoOutMappedRight;
         
-        // Updating LFO phase
-        mLFOPhase += *mRateParameter / getSampleRate();
-        
         if(mLFOPhase > 1) {
             mLFOPhase -= 1;
         }
-        
-        // Writing to buffer and adding feedback
-        mCircularBufferLeft[mCircularBufferWriteHead] = leftChannel[i] + mFeedbackLeft;
-        mCircularBufferRight[mCircularBufferWriteHead] = rightChannel[i] + mFeedbackRight;
         
         // Calculating read head for left channel delay sample
         float delayReadHeadLeft = mCircularBufferWriteHead - delayTimeSamplesLeft;
@@ -276,16 +269,19 @@ void OfChorusAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         mFeedbackLeft = delay_sample_left * *mFeedbackParameter;
         mFeedbackRight = delay_sample_right * *mFeedbackParameter;
         
-        // Mixing sample between dry and wet signal
-        buffer.setSample(0, i, buffer.getSample(0, i) * (1 - *mDryWetParameter) + delay_sample_left * *mDryWetParameter);
-        buffer.setSample(1, i, buffer.getSample(1, i) * (1 - *mDryWetParameter) + delay_sample_right * *mDryWetParameter);
-        
         // Updating buffer write head
         mCircularBufferWriteHead++;
 
         if(mCircularBufferWriteHead >= mCircularBufferLength) {
             mCircularBufferWriteHead = 0;
         }
+        
+        // Mixing sample between dry and wet signal
+        float dryAmount = 1 - *mDryWetParameter;
+        float wetAmount = *mDryWetParameter;
+        
+        buffer.setSample(0, i, buffer.getSample(0, i) * dryAmount + delay_sample_left * wetAmount);
+        buffer.setSample(1, i, buffer.getSample(1, i) * dryAmount + delay_sample_right * wetAmount);
     }
 }
 
@@ -303,15 +299,30 @@ juce::AudioProcessorEditor* OfChorusAudioProcessor::createEditor()
 //==============================================================================
 void OfChorusAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
+    std::unique_ptr<juce::XmlElement> xml(new juce::XmlElement("FlangerChorus"));
+    
+    xml->setAttribute("DryWet", *mDryWetParameter);
+    xml->setAttribute("Depth", *mDepthParameter);
+    xml->setAttribute("Rate", *mRateParameter);
+    xml->setAttribute("PhaseOffset", *mPhaseOffsetParameter);
+    xml->setAttribute("Feedback", *mFeedbackParameter);
+    xml->setAttribute("Type", *mTypeParameter);
+    
+    copyXmlToBinary(*xml, destData);
 }
 
 void OfChorusAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
+    std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(data, sizeInBytes));
+    
+    if(xml.get() != nullptr && xml->hasTagName("FlangerChorus")) {
+        *mDryWetParameter = xml->getDoubleAttribute("DryWet");
+        *mDepthParameter = xml->getDoubleAttribute("Depth");
+        *mRateParameter = xml->getDoubleAttribute("Rate");
+        *mPhaseOffsetParameter = xml->getDoubleAttribute("PhaseOffset");
+        *mFeedbackParameter = xml->getDoubleAttribute("Feedback");
+        *mTypeParameter = xml->getIntAttribute("Type");
+    }
 }
 
 //==============================================================================
